@@ -485,9 +485,23 @@ static int bpf_core_spec_match(struct bpf_core_spec *local_spec,
 	targ_spec->relo_kind = local_spec->relo_kind;
 
 	if (core_relo_is_type_based(local_spec->relo_kind)) {
-		return bpf_core_types_are_compat(local_spec->btf,
-						 local_spec->root_type_id,
-						 targ_btf, targ_id);
+    switch (local_spec->relo_kind) {
+    case BPF_CORE_TYPE_EXISTS:
+    case BPF_CORE_TYPE_SIZE:
+      return bpf_core_types_are_compat(local_spec->btf,
+               local_spec->root_type_id,
+               targ_btf, targ_id);
+    case BPF_CORE_TYPE_MATCHES:
+      return bpf_core_types_match(local_spec->btf,
+               local_spec->root_type_id,
+               targ_btf, targ_id);
+    default:
+      /* We shouldn't be seeing any other (type based) relocation kinds
+       * here. BPF_CORE_TYPE_ID_LOCAL, the only one not covered, is
+       * handled earlier on, as its treatment is somewhat special.
+       */
+      return -ENOTSUP;
+    }
 	}
 
 	local_acc = &local_spec->spec[0];
@@ -1134,11 +1148,11 @@ static void bpf_core_dump_spec(const char *prog_name, int level, const struct bp
  * 3. It is supported and expected that there might be multiple flavors
  *    matching the spec. As long as all the specs resolve to the same set of
  *    offsets across all candidates, there is no error. If there is any
- *    ambiguity, CO-RE relocation will fail. This is necessary to accomodate
- *    imprefection of BTF deduplication, which can cause slight duplication of
+ *    ambiguity, CO-RE relocation will fail. This is necessary to accommodate
+ *    imperfection of BTF deduplication, which can cause slight duplication of
  *    the same BTF type, if some directly or indirectly referenced (by
  *    pointer) type gets resolved to different actual types in different
- *    object files. If such situation occurs, deduplicated BTF will end up
+ *    object files. If such a situation occurs, deduplicated BTF will end up
  *    with two (or more) structurally identical types, which differ only in
  *    types they refer to through pointer. This should be OK in most cases and
  *    is not an error.
@@ -1177,8 +1191,12 @@ int bpf_core_calc_relo_insn(const char *prog_name,
 		return -EINVAL;
 
 	spec_str = btf__name_by_offset(local_btf, relo->access_str_off);
-	if (str_is_empty(spec_str))
+	/* libbpf doesn't support candidate search for anonymous types */
+	if (str_is_empty(spec_str)) {
+		pr_warn("prog '%s': relo #%d: <%s> (%d) relocation doesn't support anonymous types\n",
+			prog_name, relo_idx, core_relo_kind_str(relo->kind), relo->kind);
 		return -EINVAL;
+  }
 
 	err = bpf_core_parse_spec(prog_name, local_btf, local_id, spec_str,
 				  relo->kind, local_spec);
@@ -1204,13 +1222,6 @@ int bpf_core_calc_relo_insn(const char *prog_name,
 		targ_res->orig_val = local_spec->root_type_id;
 		targ_res->new_val = local_spec->root_type_id;
 		return 0;
-	}
-
-	/* libbpf doesn't support candidate search for anonymous types */
-	if (str_is_empty(spec_str)) {
-		pr_warn("prog '%s': relo #%d: <%s> (%d) relocation doesn't support anonymous types\n",
-			prog_name, relo_idx, core_relo_kind_str(relo->kind), relo->kind);
-		return -EOPNOTSUPP;
 	}
 
 	for (i = 0, j = 0; i < cands->len; i++) {

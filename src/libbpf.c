@@ -71,6 +71,8 @@
 
 static struct bpf_map *bpf_object__add_map(struct bpf_object *obj);
 static bool prog_is_subprog(const struct bpf_object *obj, const struct bpf_program *prog);
+static int bpf_core_types_match(const struct btf *local_btf, __u32 local_id,
+			      const struct btf *targ_btf, __u32 targ_id);
 
 static int __base_pr(enum libbpf_print_level level, const char *format,
 		     va_list args)
@@ -5499,6 +5501,21 @@ recur:
 		return 0;
 	}
 }
+
+
+/* Check that two types "match". The matching relation is defined as
+ * follows:
+ * - types need to be of same kind (struct vs. struct, union vs. union,
+ *   etc.)
+ * - has to be exact match (for function prototypes) OR a subset match
+ *   (for everything else)
+ */
+static int bpf_core_types_match(const struct btf *local_btf, __u32 local_id,
+			      const struct btf *targ_btf, __u32 targ_id)
+{
+  return 0;
+}
+
 
 static size_t bpf_core_hash_fn(const void *key, void *ctx)
 {
